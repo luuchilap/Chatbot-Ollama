@@ -32,15 +32,13 @@ export const ChatFolders = ({ searchTerm }: Props) => {
     return (
       conversations &&
       conversations
-        .filter((conversation) => conversation.folderId)
+        .filter((conversation) => conversation.folderId === currentFolder.id)
         .map((conversation, index) => {
-          if (conversation.folderId === currentFolder.id) {
-            return (
-              <div key={index} className="ml-5 gap-2 border-l pl-2">
-                <ConversationComponent conversation={conversation} />
-              </div>
-            );
-          }
+          return (
+            <div key={index} className="ml-5 gap-2 border-l pl-2">
+              <ConversationComponent conversation={conversation} />
+            </div>
+          );
         })
     );
   };

@@ -163,7 +163,7 @@ const Home = ({ defaultModelId }: Props) => {
 
   // CONVERSATION OPERATIONS  --------------------------------------------
 
-  const handleNewConversation = () => {
+  const handleNewConversation = (folderId: string | null = null) => {
     const lastConversation = conversations[conversations.length - 1];
 
     const newConversation: Conversation = {
@@ -173,7 +173,7 @@ const Home = ({ defaultModelId }: Props) => {
       model: lastConversation?.model,
       prompt: DEFAULT_SYSTEM_PROMPT,
       temperature: lastConversation?.temperature ?? DEFAULT_TEMPERATURE,
-      folderId: null,
+      folderId: folderId,
     };
 
     const updatedConversations = [...conversations, newConversation];
