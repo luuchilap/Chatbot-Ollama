@@ -54,12 +54,40 @@ export const ConversationComponent = ({ conversation }: Props) => {
     }
   };
 
-  const handleRename = (conversation: Conversation) => {
+  const handleRename = async (conversation: Conversation) => {
     if (renameValue.trim().length > 0) {
+      // Update the conversation in memory
       handleUpdateConversation(conversation, {
         key: 'name',
         value: renameValue.trim(),
       });
+      
+      // Get the active session ID from localStorage
+      const activeSessionIdStr = localStorage.getItem('activeSessionId');
+      const activeSessionId = activeSessionIdStr ? parseInt(activeSessionIdStr) : null;
+      
+      // If we have an active session ID, update the session title in the database
+      if (activeSessionId) {
+        try {
+          const response = await fetch('/api/messages/update-session', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              sessionId: activeSessionId,
+              sessionTitle: renameValue.trim()
+            }),
+          });
+          
+          if (!response.ok) {
+            console.error('Failed to update session title in database');
+          }
+        } catch (error) {
+          console.error('Error updating session title:', error);
+        }
+      }
+      
       setRenameValue('');
       setIsRenaming(false);
     }

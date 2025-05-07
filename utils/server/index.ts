@@ -90,8 +90,14 @@ export const OllamaStream = async (
             const parser = createParser((event) => {
               if (event.type === 'event') {
                 try {
+                  // Properly handle [DONE] marker
+                  if (event.data === '[DONE]') {
+                    // This is just a marker that the stream is done, ignore it
+                    return;
+                  }
+                  
                   const data = JSON.parse(event.data);
-                  // Check if this is the [DONE] message
+                  // Process content from the choices if present
                   if (data.choices && data.choices[0]?.delta?.content) {
                     controller.enqueue(encoder.encode(data.choices[0].delta.content));
                   }

@@ -1,0 +1,17 @@
+# PostgreSQL Database Configuration
+# Copy these values to your .env.local file and modify as needed
+
+# Database user
+PG_USER=postgres
+
+# Database host
+PG_HOST=localhost
+
+# Database name
+PG_DATABASE=chatbot_ollama
+
+# Database password - ALWAYS change in production!
+PG_PASSWORD=lap20040106
+
+# Database port
+PG_PORT=5432 

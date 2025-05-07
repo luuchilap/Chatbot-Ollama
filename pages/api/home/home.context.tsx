@@ -11,7 +11,7 @@ import { HomeInitialState } from './home.state';
 export interface HomeContextProps {
   state: HomeInitialState;
   dispatch: Dispatch<ActionType<HomeInitialState>>;
-  handleNewConversation: (folderId?: string | null) => void;
+  handleNewConversation: (folderId?: string | null) => Promise<void>;
   handleCreateFolder: (name: string, type: FolderType) => void;
   handleDeleteFolder: (folderId: string) => void;
   handleUpdateFolder: (folderId: string, name: string) => void;
@@ -19,7 +19,7 @@ export interface HomeContextProps {
   handleUpdateConversation: (
     conversation: Conversation,
     data: KeyValuePair,
-  ) => void;
+  ) => Promise<void>;
 }
 
 const HomeContext = createContext<HomeContextProps>(undefined!);

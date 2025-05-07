@@ -58,14 +58,82 @@ export const Chat = memo(({ stopConversationRef }: Props) => {
   const [showSettings, setShowSettings] = useState<boolean>(false);
   const [showScrollDownButton, setShowScrollDownButton] =
     useState<boolean>(false);
+  const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Save message to database
+  const saveMessageToDatabase = async (
+    content: string, 
+    sender: 'user' | 'assistant', 
+    sessionId: number | null = null
+  ) => {
+    try {
+      const response = await fetch('/api/messages/save', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          content,
+          sender,
+          sessionId,
+          sessionTitle: selectedConversation?.name,
+          metadata: {
+            model: selectedConversation?.model?.name,
+            temperature: selectedConversation?.temperature
+          }
+        }),
+      });
+      
+      const result = await response.json();
+      
+      if (result.status === 'success') {
+        // If this created a new session, store the session ID
+        if (sessionId === null) {
+          setActiveSessionId(result.sessionId);
+          // Store the session ID in localStorage so other components can access it
+          localStorage.setItem('activeSessionId', result.sessionId.toString());
+        }
+        return result.sessionId;
+      } else {
+        console.error('Failed to save message:', result.message);
+        toast.error('Failed to save message to database. Please try again.');
+        return sessionId;
+      }
+    } catch (error) {
+      console.error('Error saving message to database:', error);
+      toast.error('Error saving message to database. Please try again.');
+      return sessionId;
+    }
+  };
+
+  // Save AI response to database
+  const saveResponseToDatabase = async (content: string, sessionId: number) => {
+    try {
+      await fetch('/api/messages/save-response', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          content,
+          sessionId
+        }),
+      });
+    } catch (error) {
+      console.error('Error saving AI response to database:', error);
+    }
+  };
+
   const handleSend = useCallback(
     async (message: Message, deleteCount = 0 ) => {
       if (selectedConversation) {
+        // Save the user's message to the database immediately before any other operations
+        const sessionId = await saveMessageToDatabase(message.content, 'user', activeSessionId);
+        
         let updatedConversation: Conversation;
         if (deleteCount) {
           const updatedMessages = [...selectedConversation.messages];
@@ -88,6 +156,7 @@ export const Chat = memo(({ stopConversationRef }: Props) => {
         });
         homeDispatch({ field: 'loading', value: true });
         homeDispatch({ field: 'messageIsStreaming', value: true });
+        
         const chatBody: ChatBody = {
           model: updatedConversation.model.name,
           system: updatedConversation.prompt,
@@ -180,7 +249,13 @@ export const Chat = memo(({ stopConversationRef }: Props) => {
                 value: updatedConversation,
               });
             }
-          } 
+          }
+          
+          // Save the complete AI response to the database after streaming is complete
+          if (sessionId) {
+            await saveResponseToDatabase(text, sessionId);
+          }
+          
           saveConversation(updatedConversation);
           const updatedConversations: Conversation[] = conversations.map(
             (conversation) => {
@@ -289,6 +364,14 @@ export const Chat = memo(({ stopConversationRef }: Props) => {
     }
   };
   const throttledScrollDown = throttle(scrollDown, 250);
+
+  useEffect(() => {
+    // Load the active session ID from localStorage when the component mounts
+    const storedSessionId = localStorage.getItem('activeSessionId');
+    if (storedSessionId) {
+      setActiveSessionId(parseInt(storedSessionId));
+    }
+  }, []);
 
   useEffect(() => {
     throttledScrollDown();

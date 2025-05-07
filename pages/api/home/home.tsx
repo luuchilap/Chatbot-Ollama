@@ -163,7 +163,7 @@ const Home = ({ defaultModelId }: Props) => {
 
   // CONVERSATION OPERATIONS  --------------------------------------------
 
-  const handleNewConversation = (folderId: string | null = null) => {
+  const handleNewConversation = async (folderId: string | null = null) => {
     const lastConversation = conversations[conversations.length - 1];
 
     const newConversation: Conversation = {
@@ -176,6 +176,35 @@ const Home = ({ defaultModelId }: Props) => {
       folderId: folderId,
     };
 
+    // Create a new session in the database
+    try {
+      const response = await fetch('/api/messages/save', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          content: 'Session initialized',
+          sender: 'system',
+          sessionId: null, // Creating a new session
+          sessionTitle: newConversation.name,
+          metadata: {
+            model: newConversation.model?.name,
+            temperature: newConversation.temperature
+          }
+        }),
+      });
+      
+      const result = await response.json();
+      
+      if (result.status === 'success') {
+        // Store the session ID in localStorage
+        localStorage.setItem('activeSessionId', result.sessionId.toString());
+      }
+    } catch (error) {
+      console.error('Error creating new session:', error);
+    }
+
     const updatedConversations = [...conversations, newConversation];
 
     dispatch({ field: 'selectedConversation', value: newConversation });
@@ -187,7 +216,7 @@ const Home = ({ defaultModelId }: Props) => {
     dispatch({ field: 'loading', value: false });
   };
 
-  const handleUpdateConversation = (
+  const handleUpdateConversation = async (
     conversation: Conversation,
     data: KeyValuePair,
   ) => {
@@ -195,6 +224,29 @@ const Home = ({ defaultModelId }: Props) => {
       ...conversation,
       [data.key]: data.value,
     };
+
+    // If we're updating the name, also update it in the database
+    if (data.key === 'name') {
+      const activeSessionIdStr = localStorage.getItem('activeSessionId');
+      const activeSessionId = activeSessionIdStr ? parseInt(activeSessionIdStr) : null;
+      
+      if (activeSessionId) {
+        try {
+          await fetch('/api/messages/update-session', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              sessionId: activeSessionId,
+              sessionTitle: data.value
+            }),
+          });
+        } catch (error) {
+          console.error('Error updating session title:', error);
+        }
+      }
+    }
 
     const { single, all } = updateConversation(
       updatedConversation,

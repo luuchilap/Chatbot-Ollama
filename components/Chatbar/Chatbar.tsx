@@ -81,6 +81,7 @@ export const Chatbar = () => {
 
     localStorage.removeItem('conversationHistory');
     localStorage.removeItem('selectedConversation');
+    localStorage.removeItem('activeSessionId');
 
     const updatedFolders = folders.filter((f) => f.type !== 'chat');
 
@@ -104,6 +105,7 @@ export const Chatbar = () => {
       });
 
       saveConversation(updatedConversations[updatedConversations.length - 1]);
+      localStorage.removeItem('activeSessionId');
     } else {
       defaultModelId &&
         homeDispatch({
@@ -120,6 +122,7 @@ export const Chatbar = () => {
         });
 
       localStorage.removeItem('selectedConversation');
+      localStorage.removeItem('activeSessionId');
     }
   };
 
