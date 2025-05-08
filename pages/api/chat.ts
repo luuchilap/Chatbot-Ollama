@@ -3,29 +3,34 @@ import { OllamaError, OllamaStream } from '@/utils/server';
 
 import { ChatBody, Message } from '@/types/chat';
 
-
 export const config = {
   runtime: 'edge',
 };
 
 const handler = async (req: Request): Promise<Response> => {
   try {
-    const { model, system, options, prompt } = (await req.json()) as ChatBody;
-
-
-    let promptToSend = system;
-    if (!promptToSend) {
-      promptToSend = DEFAULT_SYSTEM_PROMPT;
+    const body = await req.json() as ChatBody;
+    
+    // Get FastAPI backend URL from environment variable or use default
+    const backendUrl = process.env.FASTAPI_BACKEND_URL || 'http://localhost:8000';
+    
+    // Forward the request to the FastAPI backend
+    const response = await fetch(`${backendUrl}/api/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    
+    // Check if response is ok
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.message || `HTTP error ${response.status}`);
     }
-
-    let temperatureToUse = options?.temperature;
-    if (temperatureToUse == null) {
-      temperatureToUse = DEFAULT_TEMPERATURE;
-    }
-
-    const stream = await OllamaStream (model, promptToSend, temperatureToUse, prompt);
-
-    return new Response(stream);
+    
+    // Return the streaming response
+    return new Response(response.body);
   } catch (error) {
     console.error('Chat API error:', error);
     if (error instanceof OllamaError) {
@@ -38,6 +43,18 @@ const handler = async (req: Request): Promise<Response> => {
           'Check if Ollama is running and accessible'
       }), { 
         status: 500, 
+        headers: {
+          'Content-Type': 'application/json'
+        } 
+      });
+    } else if (error instanceof TypeError && error.message.includes('fetch')) {
+      // Handle network errors (Failed to fetch)
+      return new Response(JSON.stringify({ 
+        error: 'Network Error', 
+        message: 'Failed to connect to the backend server',
+        suggestion: 'Please ensure the FastAPI backend is running on port 8000 or set FASTAPI_BACKEND_URL correctly in your .env file.'
+      }), { 
+        status: 502, 
         headers: {
           'Content-Type': 'application/json'
         } 

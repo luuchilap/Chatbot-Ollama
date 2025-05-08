@@ -64,6 +64,16 @@ export const useFetch = () => {
           return result;
         })
         .catch(async (err) => {
+          // Handle network errors (including "Failed to fetch")
+          if (err instanceof TypeError && err.message.includes('fetch')) {
+            throw {
+              error: 'Network Error',
+              message: 'Failed to connect to the server',
+              suggestion: 'Please check your internet connection and ensure the backend server is running.',
+              status: 503
+            };
+          }
+          
           const contentType = err.headers?.get?.('content-type');
 
           const errResult =

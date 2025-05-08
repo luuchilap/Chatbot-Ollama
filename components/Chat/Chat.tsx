@@ -169,57 +169,143 @@ export const Chat = memo(({ stopConversationRef }: Props) => {
           ...chatBody,
         });
         const controller = new AbortController();
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          signal: controller.signal,
-          body,
-        });
-        if (!response.ok) {
-          homeDispatch({ field: 'loading', value: false });
-          homeDispatch({ field: 'messageIsStreaming', value: false });
-          toast.error(response.statusText);
-          return;
-        }
-        const data = response.body;
-        if (!data) {
-          homeDispatch({ field: 'loading', value: false });
-          homeDispatch({ field: 'messageIsStreaming', value: false });
-          return;
-        }
-        if (!false) {
-          if (updatedConversation.messages.length === 1) {
-            const { content } = message;
-            const customName =
-              content.length > 30 ? content.substring(0, 30) + '...' : content;
-            updatedConversation = {
-              ...updatedConversation,
-              name: customName,
-            };
+        
+        try {
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            signal: controller.signal,
+            body,
+          });
+          
+          if (!response.ok) {
+            homeDispatch({ field: 'loading', value: false });
+            homeDispatch({ field: 'messageIsStreaming', value: false });
+            
+            try {
+              // Try to parse error details from response
+              const errorData = await response.json();
+              
+              if (errorData.error && errorData.message) {
+                // Set a specific error message for the UI
+                homeDispatch({
+                  field: 'modelError',
+                  value: {
+                    title: errorData.error,
+                    messageLines: [errorData.message],
+                    suggestion: errorData.suggestion || 'Please try again later.',
+                    code: response.status.toString()
+                  }
+                });
+                
+                toast.error(`${errorData.error}: ${errorData.message}`);
+              } else {
+                toast.error(`Error: ${response.statusText}`);
+              }
+            } catch (parseError) {
+              // If we can't parse the JSON, just use the status text
+              toast.error(`Error: ${response.statusText || 'Unknown error'}`);
+            }
+            
+            return;
           }
-          homeDispatch({ field: 'loading', value: false });
-          const reader = data.getReader();
-          const decoder = new TextDecoder();
-          let done = false;
-          let isFirst = true;
-          let text = '';
-          while (!done) {
-          if (stopConversationRef.current === true) {
-            controller.abort();
-            done = true;
-            break;
+          
+          const data = response.body;
+          if (!data) {
+            homeDispatch({ field: 'loading', value: false });
+            homeDispatch({ field: 'messageIsStreaming', value: false });
+            return;
           }
-          const { value, done: doneReading } = await reader.read();
-          done = doneReading;
-          const chunkValue = decoder.decode(value);
-          text += chunkValue;
-          if (isFirst) {
-            isFirst = false;
+          
+          if (!false) {
+            if (updatedConversation.messages.length === 1) {
+              const { content } = message;
+              const customName =
+                content.length > 30 ? content.substring(0, 30) + '...' : content;
+              updatedConversation = {
+                ...updatedConversation,
+                name: customName,
+              };
+            }
+            homeDispatch({ field: 'loading', value: false });
+            const reader = data.getReader();
+            const decoder = new TextDecoder();
+            let done = false;
+            let isFirst = true;
+            let text = '';
+            while (!done) {
+              if (stopConversationRef.current === true) {
+                controller.abort();
+                done = true;
+                break;
+              }
+              const { value, done: doneReading } = await reader.read();
+              done = doneReading;
+              const chunkValue = decoder.decode(value);
+              text += chunkValue;
+              if (isFirst) {
+                isFirst = false;
+                const updatedMessages: Message[] = [
+                  ...updatedConversation.messages,
+                  { role: 'assistant', content: chunkValue },
+                ];
+                updatedConversation = {
+                  ...updatedConversation,
+                  messages: updatedMessages,
+                };
+                homeDispatch({
+                  field: 'selectedConversation',
+                  value: updatedConversation,
+                });
+              } else {
+                const updatedMessages: Message[] =
+                  updatedConversation.messages.map((message, index) => {
+                    if (index === updatedConversation.messages.length - 1) {
+                      return {
+                        ...message,
+                        content: text,
+                      };
+                    }
+                    return message;
+                  });
+                updatedConversation = {
+                  ...updatedConversation,
+                  messages: updatedMessages,
+                };
+                homeDispatch({
+                  field: 'selectedConversation',
+                  value: updatedConversation,
+                });
+              }
+            }
+            
+            // Save the complete AI response to the database after streaming is complete
+            if (sessionId) {
+              await saveResponseToDatabase(text, sessionId);
+            }
+            
+            saveConversation(updatedConversation);
+            const updatedConversations: Conversation[] = conversations.map(
+              (conversation) => {
+                if (conversation.id === selectedConversation.id) {
+                  return updatedConversation;
+                }
+                return conversation;
+              },
+            );
+            if (updatedConversations.length === 0) {
+              updatedConversations.push(updatedConversation);
+            }
+            homeDispatch({ field: 'conversations', value: updatedConversations });
+            saveConversations(updatedConversations);
+            homeDispatch({ field: 'messageIsStreaming', value: false });
+          } else {
+            const { answer } = await response.json();
             const updatedMessages: Message[] = [
               ...updatedConversation.messages,
-              { role: 'assistant', content: chunkValue },
+              { role: 'assistant', content: answer },
             ];
             updatedConversation = {
               ...updatedConversation,
@@ -227,80 +313,42 @@ export const Chat = memo(({ stopConversationRef }: Props) => {
             };
             homeDispatch({
               field: 'selectedConversation',
-              value: updatedConversation,
+              value: updateConversation,
             });
-            } else {
-              const updatedMessages: Message[] =
-                updatedConversation.messages.map((message, index) => {
-                  if (index === updatedConversation.messages.length - 1) {
-                    return {
-                      ...message,
-                      content: text,
-                    };
-                  }
-                  return message;
-                });
-              updatedConversation = {
-                ...updatedConversation,
-                messages: updatedMessages,
-              };
-              homeDispatch({
-                field: 'selectedConversation',
-                value: updatedConversation,
-              });
+            saveConversation(updatedConversation);
+            const updatedConversations: Conversation[] = conversations.map(
+              (conversation) => {
+                if (conversation.id === selectedConversation.id) {
+                  return updatedConversation;
+                }
+                return conversation;
+              },
+            );
+            if (updatedConversations.length === 0) {
+              updatedConversations.push(updatedConversation);
             }
+            homeDispatch({ field: 'conversations', value: updatedConversations });
+            saveConversations(updatedConversations);
+            homeDispatch({ field: 'loading', value: false });
+            homeDispatch({ field: 'messageIsStreaming', value: false });
           }
-          
-          // Save the complete AI response to the database after streaming is complete
-          if (sessionId) {
-            await saveResponseToDatabase(text, sessionId);
-          }
-          
-          saveConversation(updatedConversation);
-          const updatedConversations: Conversation[] = conversations.map(
-            (conversation) => {
-              if (conversation.id === selectedConversation.id) {
-                return updatedConversation;
-              }
-              return conversation;
-            },
-          );
-          if (updatedConversations.length === 0) {
-            updatedConversations.push(updatedConversation);
-          }
-          homeDispatch({ field: 'conversations', value: updatedConversations });
-          saveConversations(updatedConversations);
-          homeDispatch({ field: 'messageIsStreaming', value: false });
-        } else {
-          const { answer } = await response.json();
-          const updatedMessages: Message[] = [
-            ...updatedConversation.messages,
-            { role: 'assistant', content: answer },
-          ];
-          updatedConversation = {
-            ...updatedConversation,
-            messages: updatedMessages,
-          };
-          homeDispatch({
-            field: 'selectedConversation',
-            value: updateConversation,
-          });
-          saveConversation(updatedConversation);
-          const updatedConversations: Conversation[] = conversations.map(
-            (conversation) => {
-              if (conversation.id === selectedConversation.id) {
-                return updatedConversation;
-              }
-              return conversation;
-            },
-          );
-          if (updatedConversations.length === 0) {
-            updatedConversations.push(updatedConversation);
-          }
-          homeDispatch({ field: 'conversations', value: updatedConversations });
-          saveConversations(updatedConversations);
+        } catch (error) {
           homeDispatch({ field: 'loading', value: false });
           homeDispatch({ field: 'messageIsStreaming', value: false });
+          
+          // Handle network errors
+          homeDispatch({
+            field: 'modelError',
+            value: {
+              title: 'Network Error',
+              messageLines: ['Failed to connect to the server.'],
+              suggestion: 'Please check your internet connection and ensure the backend server is running.',
+              code: 'NETWORK_ERROR'
+            }
+          });
+          
+          toast.error('Network Error: Failed to connect to the server.');
+          return;
         }
       }
     },
@@ -365,6 +413,45 @@ export const Chat = memo(({ stopConversationRef }: Props) => {
   };
   const throttledScrollDown = throttle(scrollDown, 250);
 
+  // Load session messages with their database IDs
+  const loadSessionMessages = useCallback(async () => {
+    if (!activeSessionId || !selectedConversation) return;
+    
+    try {
+      const response = await fetch(`/api/messages/get-session-messages?sessionId=${activeSessionId}`);
+      if (response.ok) {
+        const result = await response.json();
+        if (result.status === 'success' && result.data.length > 0) {
+          // Create a mapping of message content to database IDs
+          const messageMap = new Map();
+          result.data.forEach((dbMessage: any) => {
+            messageMap.set(dbMessage.content, dbMessage.id);
+          });
+          
+          // Update the conversation messages with database IDs
+          if (selectedConversation.messages.length > 0) {
+            const updatedMessages = selectedConversation.messages.map(message => {
+              const dbId = messageMap.get(message.content);
+              if (dbId) {
+                return { ...message, id: dbId };
+              }
+              return message;
+            });
+            
+            if (JSON.stringify(updatedMessages) !== JSON.stringify(selectedConversation.messages)) {
+              handleUpdateConversation(selectedConversation, {
+                key: 'messages',
+                value: updatedMessages
+              });
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error loading session messages:', error);
+    }
+  }, [activeSessionId, selectedConversation, handleUpdateConversation]);
+
   useEffect(() => {
     // Load the active session ID from localStorage when the component mounts
     const storedSessionId = localStorage.getItem('activeSessionId');
@@ -372,6 +459,13 @@ export const Chat = memo(({ stopConversationRef }: Props) => {
       setActiveSessionId(parseInt(storedSessionId));
     }
   }, []);
+  
+  // Load database message IDs when activeSessionId changes
+  useEffect(() => {
+    if (activeSessionId && selectedConversation) {
+      loadSessionMessages();
+    }
+  }, [activeSessionId, loadSessionMessages]);
 
   useEffect(() => {
     throttledScrollDown();

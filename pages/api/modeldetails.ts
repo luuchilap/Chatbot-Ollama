@@ -1,5 +1,4 @@
 import { OLLAMA_HOST, LMSTUDIO_HOST } from '@/utils/app/const';
-import { OllamaModelDetail } from '@/types/ollama';
 
 export const config = {
   runtime: 'edge',
@@ -7,88 +6,41 @@ export const config = {
 
 const handler = async (req: Request): Promise<Response> => {
   try {
-    // Determine if we should use LMStudio or Ollama
-    const isLMStudio = OLLAMA_HOST === LMSTUDIO_HOST;
+    // Get request body
+    const body = await req.json();
     
-    let url: string;
-    let requestBody: any;
+    // Get FastAPI backend URL from environment variable or use default
+    const backendUrl = process.env.FASTAPI_BACKEND_URL || 'http://localhost:8000';
     
-    // Set up the request based on which API we're using
-    if (isLMStudio) {
-      // LMStudio doesn't have a direct equivalent of Ollama's /api/show endpoint
-      // Instead, we'll return some basic info from a model endpoint
-      url = `${LMSTUDIO_HOST}/v1/models`;
-      requestBody = null; // GET request with no body
-    } else {
-      // Ollama API
-      url = `${OLLAMA_HOST}/api/show`;
-      const { name } = await req.json();
-      
-      if (typeof name !== 'string' || name.trim() === '') {
-        return new Response('Name parameter is required', { status: 400 });
-      }
-      
-      requestBody = JSON.stringify({ name });
-    }
-
-    const response = await fetch(url, {
-      method: isLMStudio ? 'GET' : 'POST', 
+    // Forward the request to the FastAPI backend
+    const response = await fetch(`${backendUrl}/api/modeldetails`, {
+      method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      ...(requestBody ? { body: requestBody } : {}),
+      body: JSON.stringify(body),
     });
-
-    if (response.status === 401) {
-      return new Response(response.body, {
-        status: 500,
-        headers: response.headers,
-      });
-    } else if (response.status !== 200) {
-      console.error(
-        `${isLMStudio ? 'LMStudio' : 'Ollama'} API returned an error ${
-          response.status
-        }: ${await response.text()}`,
-      );
-      throw new Error(`${isLMStudio ? 'LMStudio' : 'Ollama'} API returned an error`);
-    }
-
-    const json = await response.json();
     
-    // Format response based on the API
-    if (isLMStudio) {
-      // Since LMStudio doesn't provide detailed model info like Ollama,
-      // we'll create a minimal compatible response with what we have
-      const { name } = await req.json();
-      const modelInfo = {
-        license: "Unknown", // LMStudio doesn't provide license info
-        modelfile: "",
-        parameters: "Unknown",
-        template: "{{ .System }}\n\n{{ .Prompt }}",
-        system: "You are a helpful assistant.",
-      };
-      
-      return new Response(JSON.stringify(modelInfo), { status: 200 });
-    } else {
-      // Pass through Ollama response
-      return new Response(JSON.stringify(json), { status: 200 });
+    // Check if response is ok
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.message || `HTTP error ${response.status}`);
     }
+    
+    // Return the response from the FastAPI backend
+    const modelDetails = await response.json();
+    return new Response(JSON.stringify(modelDetails), { status: 200 });
   } catch (error) {
     console.error('Model details API error:', error);
     
-    // Determine if we're using LMStudio
-    const isLMStudio = OLLAMA_HOST === LMSTUDIO_HOST;
-    const apiHost = isLMStudio ? LMSTUDIO_HOST : OLLAMA_HOST;
-    const apiName = isLMStudio ? 'LMStudio' : 'Ollama';
-    
-    // Check if this is a fetch/connection error that might be related to API host setting
     if (error instanceof TypeError && error.message.includes('fetch')) {
+      // Handle network errors (Failed to fetch)
       return new Response(JSON.stringify({
-        error: 'Connection Error',
-        message: `Could not connect to ${apiName} at ${apiHost}`,
-        suggestion: `Check if ${apiName} is running and accessible at ${apiHost}`
+        error: 'Network Error',
+        message: 'Failed to connect to the backend server',
+        suggestion: 'Please ensure the FastAPI backend is running on port 8000 or set FASTAPI_BACKEND_URL correctly in your .env file.'
       }), { 
-        status: 500,
+        status: 502,
         headers: {
           'Content-Type': 'application/json'
         }

@@ -1,7 +1,7 @@
 version: '3.6'
 
 services:
-  chatgpt:
+  nextjs-frontend:
     build: .
     ports:
       - 3000:3000
@@ -9,3 +9,56 @@ services:
       - 'DEFAULT_MODEL='
       - 'OLLAMA_HOST='
       - 'NEXT_PUBLIC_API_TIMEOUT=600000'
+      - 'FASTAPI_BACKEND_URL=http://fastapi-backend:8000'
+    depends_on:
+      - fastapi-backend
+    networks:
+      - app-network
+
+  fastapi-backend:
+    build: ./backend
+    ports:
+      - 8000:8000
+    environment:
+      - PG_USER=postgres
+      - PG_PASSWORD=lap20040106
+      - PG_HOST=postgres-db
+      - PG_DATABASE=chatbot_ollama
+      - PG_PORT=5432
+      - OLLAMA_HOST=http://ollama:11434
+    depends_on:
+      - postgres-db
+    networks:
+      - app-network
+    volumes:
+      - ./backend:/app
+
+  postgres-db:
+    image: postgres:15
+    ports:
+      - 5432:5432
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=lap20040106
+      - POSTGRES_DB=chatbot_ollama
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - app-network
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - 11434:11434
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - app-network
+
+volumes:
+  postgres-data:
+  ollama-data:
+
+networks:
+  app-network:
+    driver: bridge

@@ -89,31 +89,39 @@ export const ModelSelect = () => {
           value={selectedConversation?.model?.name || defaultModelId}
           onChange={handleChange}
         >
-          {models.map((model) => (
-            <option
-              key={model.name}
-              value={model.name}
-              className="dark:bg-[#343541] dark:text-white"
-            >
-              {model.name === defaultModelId
-                ? `Default (${model.name})`
-                : model.name}
+          {models && models.length > 0 ? (
+            models.map((model) => (
+              <option
+                key={model.name}
+                value={model.name}
+                className="dark:bg-[#343541] dark:text-white"
+              >
+                {model.name === defaultModelId
+                  ? `Default (${model.name})`
+                  : model.name}
+              </option>
+            ))
+          ) : (
+            <option value="" disabled>
+              {t('No models available')}
             </option>
-          ))}
+          )}
         </select>
       </div>
 
       {/* Display additional properties */}
-      <div className="mb-2 text-left text-neutral-700 dark:text-neutral-400">
-        <p className='mt-2'>
-          <span className="mr-16 inline-block">Size:</span>
-          <span className="inline-block">{selectedModelDetails.size}</span>
-        </p>
-        <p>
-          <span className="mr-8 inline-block">Modified:</span>
-          <span className="inline-block">{selectedModelDetails.modified}</span>
-        </p>
-      </div>
+      {selectedModelDetails && (
+        <div className="mb-2 text-left text-neutral-700 dark:text-neutral-400">
+          <p className='mt-2'>
+            <span className="mr-16 inline-block">Size:</span>
+            <span className="inline-block">{selectedModelDetails.size}</span>
+          </p>
+          <p>
+            <span className="mr-8 inline-block">Modified:</span>
+            <span className="inline-block">{selectedModelDetails.modified}</span>
+          </p>
+        </div>
+      )}
     </div>
   );
 };

@@ -3,10 +3,13 @@ import {
   IconCopy,
   IconEdit,
   IconRobot,
+  IconStar,
+  IconStarFilled,
   IconTrash,
   IconUser,
 } from '@tabler/icons-react';
 import { FC, memo, useContext, useEffect, useRef, useState } from 'react';
+import toast from 'react-hot-toast';
 
 import { useTranslation } from 'next-i18next';
 
@@ -43,6 +46,10 @@ export const ChatMessage: FC<Props> = memo(({ message, messageIndex, onEdit }) =
   const [isTyping, setIsTyping] = useState<boolean>(false);
   const [messageContent, setMessageContent] = useState(message.content);
   const [messagedCopied, setMessageCopied] = useState(false);
+  const [showRating, setShowRating] = useState(false);
+  const [rating, setRating] = useState(0);
+  const [savedRating, setSavedRating] = useState(0);
+  const [isRatingSubmitted, setIsRatingSubmitted] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -92,6 +99,8 @@ export const ChatMessage: FC<Props> = memo(({ message, messageIndex, onEdit }) =
       updatedConversation,
       conversations,
     );
+
+    
     homeDispatch({ field: 'selectedConversation', value: single });
     homeDispatch({ field: 'conversations', value: all });
   };
@@ -113,11 +122,100 @@ export const ChatMessage: FC<Props> = memo(({ message, messageIndex, onEdit }) =
       }, 2000);
     });
   };
+  
+  const handleRating = async (value: number) => {
+    try {
+      // Get active session ID from localStorage
+      const activeSessionIdStr = localStorage.getItem('activeSessionId');
+      const activeSessionId = activeSessionIdStr ? parseInt(activeSessionIdStr) : null;
+      
+      // Use message ID if available, otherwise use index with session ID
+      const messageId = message.id ? Number(message.id) : undefined;
+      
+      const response = await fetch('/api/messages/save-feedback', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messageId,
+          messageIndex: messageIndex,
+          sessionId: activeSessionId,
+          rating: value,
+        }),
+      });
+      
+      if (response.ok) {
+        setSavedRating(value);
+        setIsRatingSubmitted(true);
+        toast.success(t('Rating submitted!'));
+      } else {
+        toast.error(t('Failed to submit rating'));
+      }
+    } catch (error) {
+      console.error('Error submitting rating:', error);
+      toast.error(t('Error submitting rating'));
+    }
+  };
+
+  const handleRatingHover = (hoveredRating: number) => {
+    if (!isRatingSubmitted) {
+      setRating(hoveredRating);
+    }
+  };
+
+  const renderRatingStars = () => {
+    const stars = [];
+    const displayRating = isRatingSubmitted ? savedRating : rating;
+    
+    for (let i = 1; i <= 5; i++) {
+      stars.push(
+        <button
+          key={i}
+          className={`text-gray-500 hover:text-yellow-500 ${
+            i <= displayRating ? 'text-yellow-500' : ''
+          } ${isRatingSubmitted ? 'cursor-default' : 'cursor-pointer'}`}
+          onClick={() => !isRatingSubmitted && handleRating(i)}
+          onMouseEnter={() => handleRatingHover(i)}
+          onMouseLeave={() => !isRatingSubmitted && setRating(0)}
+          disabled={isRatingSubmitted}
+        >
+          {i <= displayRating ? 
+            <IconStarFilled size={20} stroke={1.5} /> : 
+            <IconStar size={20} stroke={1.5} />
+          }
+        </button>
+      );
+    }
+    return (
+      <div className="flex space-x-1">
+        {stars}
+      </div>
+    );
+  };
+
+  // Check for existing feedback
+  const checkExistingFeedback = async () => {
+    // Only check for assistant messages
+    if (message.role !== 'assistant' || !message.id) return;
+    
+    try {
+      const response = await fetch(`/api/messages/get-feedback?messageId=${message.id}`);
+      if (response.ok) {
+        const result = await response.json();
+        if (result.status === 'success' && result.data.count > 0) {
+          setSavedRating(Math.round(result.data.averageRating));
+          setIsRatingSubmitted(true);
+        }
+      }
+    } catch (error) {
+      console.error('Error checking existing feedback:', error);
+    }
+  };
 
   useEffect(() => {
     setMessageContent(message.content);
   }, [message.content]);
-
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -125,6 +223,13 @@ export const ChatMessage: FC<Props> = memo(({ message, messageIndex, onEdit }) =
       textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
     }
   }, [isEditing]);
+  
+  // Check for existing feedback when component mounts
+  useEffect(() => {
+    if (message.role === 'assistant') {
+      checkExistingFeedback();
+    }
+  }, [message.id]);
 
   return (
     <div
@@ -134,6 +239,8 @@ export const ChatMessage: FC<Props> = memo(({ message, messageIndex, onEdit }) =
           : 'border-b border-black/10 bg-white/95 text-gray-800 dark:border-gray-900/50 dark:bg-[#343541]/95 dark:text-gray-100'
       }`}
       style={{ overflowWrap: 'anywhere' }}
+      onMouseEnter={() => message.role === 'assistant' && setShowRating(true)}
+      onMouseLeave={() => message.role === 'assistant' && setShowRating(false)}
     >
       <div className="relative m-auto flex p-4 text-base md:max-w-2xl md:gap-6 md:py-6 lg:max-w-2xl lg:px-0 xl:max-w-3xl">
         <div className="min-w-[40px] text-right">
@@ -213,79 +320,87 @@ export const ChatMessage: FC<Props> = memo(({ message, messageIndex, onEdit }) =
               )}
             </div>
           ) : (
-            <div className="flex flex-row">
-              <MemoizedReactMarkdown
-                className="prose dark:prose-invert flex-1"
-                remarkPlugins={[remarkGfm, remarkMath]}
-                components={{
-                  code({ node, inline, className, children, ...props }) {
-                    const childrenArray = Array.isArray(children) ? children : [children];
-                    if (childrenArray.length) {
-                      if (childrenArray[0] === '▍') {
-                        return <span className="animate-pulse cursor-default mt-1">▍</span>
+            <div className="flex flex-col">
+              <div className="flex flex-row">
+                <MemoizedReactMarkdown
+                  className="prose dark:prose-invert flex-1"
+                  remarkPlugins={[remarkGfm, remarkMath]}
+                  components={{
+                    code({ node, inline, className, children, ...props }) {
+                      const childrenArray = Array.isArray(children) ? children : [children];
+                      if (childrenArray.length) {
+                        if (childrenArray[0] === '▍') {
+                          return <span className="animate-pulse cursor-default mt-1">▍</span>
+                        }
+
+                        if (typeof childrenArray[0] === 'string') {
+                          childrenArray[0] = childrenArray[0].replace("`▍`", "▍");
+                        }
                       }
 
-                      if (typeof childrenArray[0] === 'string') {
-                        childrenArray[0] = childrenArray[0].replace("`▍`", "▍");
-                      }
-                    }
+                      const match = /language-(\w+)/.exec(className || '');
 
-                    const match = /language-(\w+)/.exec(className || '');
+                      return !inline ? (
+                        <CodeBlock
+                          key={Math.random()}
+                          language={(match && match[1]) || ''}
+                          value={String(children).replace(/\n$/, '')}
+                          {...props}
+                        />
+                      ) : (
+                        <code className={className} {...props}>
+                          {children}
+                        </code>
+                      );
+                    },
+                    table({ children }) {
+                      return (
+                        <table className="border-collapse border border-black px-3 py-1 dark:border-white">
+                          {children}
+                        </table>
+                      );
+                    },
+                    th({ children }) {
+                      return (
+                        <th className="break-words border border-black bg-gray-500 px-3 py-1 text-white dark:border-white">
+                          {children}
+                        </th>
+                      );
+                    },
+                    td({ children }) {
+                      return (
+                        <td className="break-words border border-black px-3 py-1 dark:border-white">
+                          {children}
+                        </td>
+                      );
+                    },
+                  }}
+                >
+                  {`${message.content}${
+                    messageIsStreaming && messageIndex == (selectedConversation?.messages.length ?? 0) - 1 ? '`▍`' : ''
+                  }`}
+                </MemoizedReactMarkdown>
 
-                    return !inline ? (
-                      <CodeBlock
-                        key={Math.random()}
-                        language={(match && match[1]) || ''}
-                        value={String(children).replace(/\n$/, '')}
-                        {...props}
-                      />
-                    ) : (
-                      <code className={className} {...props}>
-                        {children}
-                      </code>
-                    );
-                  },
-                  table({ children }) {
-                    return (
-                      <table className="border-collapse border border-black px-3 py-1 dark:border-white">
-                        {children}
-                      </table>
-                    );
-                  },
-                  th({ children }) {
-                    return (
-                      <th className="break-words border border-black bg-gray-500 px-3 py-1 text-white dark:border-white">
-                        {children}
-                      </th>
-                    );
-                  },
-                  td({ children }) {
-                    return (
-                      <td className="break-words border border-black px-3 py-1 dark:border-white">
-                        {children}
-                      </td>
-                    );
-                  },
-                }}
-              >
-                {`${message.content}${
-                  messageIsStreaming && messageIndex == (selectedConversation?.messages.length ?? 0) - 1 ? '`▍`' : ''
-                }`}
-              </MemoizedReactMarkdown>
-
-              <div className="md:-mr-8 ml-1 md:ml-0 flex flex-col md:flex-row gap-4 md:gap-1 items-center md:items-start justify-end md:justify-start">
-                {messagedCopied ? (
-                  <div className="p-1 rounded-md bg-green-500/10 text-green-500 dark:text-green-400">
-                    <IconCheck size={18} stroke={1.5} />
-                  </div>
-                ) : (
-                  <button
-                    className="invisible group-hover:visible focus:visible text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 p-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors duration-200"
-                    onClick={copyOnClick}
-                  >
-                    <IconCopy size={18} stroke={1.5} />
-                  </button>
-                )}
+                <div className="md:-mr-8 ml-1 md:ml-0 flex flex-col md:flex-row gap-4 md:gap-1 items-center md:items-start justify-end md:justify-start">
+                  {messagedCopied ? (
+                    <div className="p-1 rounded-md bg-green-500/10 text-green-500 dark:text-green-400">
+                      <IconCheck size={18} stroke={1.5} />
+                    </div>
+                  ) : (
+                    <button
+                      className="invisible group-hover:visible focus:visible text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 p-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors duration-200"
+                      onClick={copyOnClick}
+                    >
+                      <IconCopy size={18} stroke={1.5} />
+                    </button>
+                  )}
+                </div>
+              </div>
+              
+              {/* Rating section */}
+              <div className={`flex justify-end mt-2 items-center gap-2 transition-opacity duration-200 ${showRating || isRatingSubmitted ? 'opacity-100' : 'opacity-0'}`}>
+                <span className="text-sm text-gray-500 dark:text-gray-400">{isRatingSubmitted ? t('Thank you for your feedback!') : t('Rate this response:')}</span>
+                {renderRatingStars()}
               </div>
             </div>
           )}
